@@ -41,3 +41,17 @@ This program was created to address the challenges of smaller status bars and mi
  
 2. **Disable the feature**:
    - The program can be paused or quit by right-clicking in the system-tray and selecting the desired option, "Exit", "Pause".
+
+---
+
+## License
+
+This project is licensed under the GNU General Public License v3.0. 
+
+You may copy, distribute, and modify the software as long as you track changes/dates in source files. Any modifications to this software must also be made available under the GNU GPL. 
+
+---
+
+## Acknowledgements
+
+Inspired by the ease of use in Linux Desktop Environments and tailored for a smoother Windows experience.
