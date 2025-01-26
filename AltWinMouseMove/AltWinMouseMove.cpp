@@ -1,4 +1,14 @@
 #include <windows.h>
+#include <shellapi.h>
+
+#define WM_TRAYICON (WM_USER + 1) // Define tray icon message
+#define ID_TRAY_EXIT 1001         // Menu item ID for exit
+#define ID_TRAY_PAUSE 1002        // Menu item ID for "Pause/Resume"
+
+
+// Boolean for pausing the functionality via system tray
+bool isPaused = false;
+
 
 // Variables to track the state of the drag and resize
 bool isDragging = false;
@@ -41,6 +51,10 @@ ResizeCorner GetNearestCorner(POINT cursorPos, RECT windowRect) {
 
 // Callback function for the low-level mouse hook
 LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (isPaused) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam); // Skip functionality if paused
+    }
+
     if (nCode >= 0) {
         if (wParam == WM_LBUTTONDOWN) {
             // Check if the Alt key is being held
@@ -160,22 +174,85 @@ LRESULT CALLBACK MouseHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
-int main() {
-    // Set up a low-level mouse hook
+// Window procedure for handling tray icon messages
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_TRAYICON:
+        if (lParam == WM_RBUTTONDOWN) {
+            // Show a context menu when right-clicking the tray icon
+            HMENU hMenu = CreatePopupMenu();
+            AppendMenu(hMenu, MF_STRING, ID_TRAY_PAUSE, isPaused ? L"Resume" : L"Pause");
+            AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, L"Exit");
+
+            POINT pt;
+            GetCursorPos(&pt);
+            SetForegroundWindow(hwnd); // Required for the menu to display correctly
+            TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
+            DestroyMenu(hMenu);
+        }
+        break;
+
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case ID_TRAY_PAUSE:
+            isPaused = !isPaused; // Toggle the pause state
+            break;
+
+        case ID_TRAY_EXIT:
+            PostQuitMessage(0); // Exit the application
+            break;
+        }
+        break;
+
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
+
+    default:
+        return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+    return 0;
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    // Step 1: Create a hidden window for tray icon messages
+    WNDCLASS wc = { 0 };
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = L"AltWinMouseMoveHiddenWindow";
+    RegisterClass(&wc);
+
+    HWND hwnd = CreateWindow(wc.lpszClassName, L"AltWinMouseMove", 0, 0, 0, 0, 0, nullptr, nullptr, wc.hInstance, nullptr);
+
+    // Step 2: Set up the system tray icon
+    NOTIFYICONDATA nid = { 0 };
+    nid.cbSize = sizeof(NOTIFYICONDATA);
+    nid.hWnd = hwnd;              // Handle to the hidden window
+    nid.uID = 1;                  // Unique ID for the icon
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.uCallbackMessage = WM_TRAYICON; // Message to handle tray events
+    nid.hIcon = LoadIcon(NULL, IDI_APPLICATION); // Default application icon
+    wcscpy_s(nid.szTip, L"AltWinMouseMove"); // Tooltip text for the tray icon
+
+    Shell_NotifyIcon(NIM_ADD, &nid);
+
+    // Step 3: Set up a low-level mouse hook
     HHOOK mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, nullptr, 0);
     if (!mouseHook) {
         MessageBox(nullptr, L"Failed to set mouse hook", L"Error", MB_OK | MB_ICONERROR);
         return 1;
     }
 
-    // Message loop to keep the program running
+    // Step 4: Message loop
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
-    // Unhook the mouse hook when done
-    UnhookWindowsHookEx(mouseHook);
+    // Step 5: Clean up
+    Shell_NotifyIcon(NIM_DELETE, &nid); // Remove tray icon
+    UnhookWindowsHookEx(mouseHook);    // Unhook mouse hook
+
     return 0;
 }
